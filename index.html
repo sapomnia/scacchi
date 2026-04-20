@@ -22,6 +22,27 @@
       </div>
 
       <aside class="sidebar">
+        <div class="mode">
+          <label>Modalità
+            <select id="mode">
+              <option value="pvp">2 giocatori</option>
+              <option value="pvc">Contro il computer</option>
+            </select>
+          </label>
+          <label class="ai-option">Il computer gioca come
+            <select id="aiColor">
+              <option value="b">Nero</option>
+              <option value="w">Bianco</option>
+            </select>
+          </label>
+          <label class="ai-option">Difficoltà
+            <select id="difficulty">
+              <option value="2">Facile</option>
+              <option value="3" selected>Media</option>
+              <option value="4">Difficile</option>
+            </select>
+          </label>
+        </div>
         <div class="controls">
           <button id="reset">Nuova partita</button>
           <button id="undo">Annulla mossa</button>

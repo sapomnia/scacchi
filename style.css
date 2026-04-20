@@ -121,6 +121,31 @@ main {
 }
 .sidebar h2 { font-size: 1rem; margin: 1rem 0 0.5rem; }
 
+.mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #3a4048;
+}
+.mode label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  color: #aaa;
+  gap: 0.2rem;
+}
+.mode select {
+  background: #3a4048;
+  color: #fff;
+  border: none;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+.ai-option.hidden { display: none; }
+
 .controls {
   display: flex;
   flex-direction: column;

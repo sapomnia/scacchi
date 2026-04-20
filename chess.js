@@ -34,7 +34,11 @@ const state = {
   flipped: false,
   lastMove: null,
   gameOver: false,
-  captured: { w: [], b: [] }
+  captured: { w: [], b: [] },
+  mode: 'pvp',        // 'pvp' | 'pvc'
+  aiColor: 'b',       // colore giocato dal computer
+  difficulty: 3,      // profondità di ricerca
+  aiThinking: false
 };
 
 const boardEl = document.getElementById('board');
@@ -348,20 +352,26 @@ async function makeMove(move) {
 
   checkGameEnd();
   render();
+  maybeTriggerAI();
 }
 
 function undoMove() {
-  if (!state.history.length || state.gameOver) return;
-  const last = state.history.pop();
-  const s = last.snap;
-  state.board = s.board;
-  state.turn = s.turn;
-  state.castling = s.castling;
-  state.enPassant = s.enPassant;
-  state.halfmove = s.halfmove;
-  state.fullmove = s.fullmove;
-  state.lastMove = s.lastMove;
-  state.captured = s.captured;
+  if (!state.history.length || state.aiThinking) return;
+  // in modalità vs computer, annulla la mossa dell'AI + la tua, così torna il tuo turno
+  const steps = (state.mode === 'pvc' && state.history.length >= 2) ? 2 : 1;
+  for (let i = 0; i < steps; i++) {
+    if (!state.history.length) break;
+    const last = state.history.pop();
+    const s = last.snap;
+    state.board = s.board;
+    state.turn = s.turn;
+    state.castling = s.castling;
+    state.enPassant = s.enPassant;
+    state.halfmove = s.halfmove;
+    state.fullmove = s.fullmove;
+    state.lastMove = s.lastMove;
+    state.captured = s.captured;
+  }
   state.gameOver = false;
   state.selected = null;
   state.legalForSelected = [];
@@ -499,7 +509,8 @@ function render() {
 }
 
 function onSquareClick(r, c) {
-  if (state.gameOver) return;
+  if (state.gameOver || state.aiThinking) return;
+  if (state.mode === 'pvc' && state.turn === state.aiColor) return;
   const piece = state.board[r][c];
 
   // se ho già selezionato e clicco una casa legale -> muovo
@@ -535,7 +546,7 @@ function selectSquare(r, c) {
 }
 
 // ---- Pulsanti ----
-document.getElementById('reset').addEventListener('click', () => {
+function resetGame() {
   Object.assign(state, {
     board: initialBoard(),
     turn: 'w',
@@ -548,17 +559,243 @@ document.getElementById('reset').addEventListener('click', () => {
     fullmove: 1,
     lastMove: null,
     gameOver: false,
-    captured: { w: [], b: [] }
+    captured: { w: [], b: [] },
+    aiThinking: false
   });
   messageEl.textContent = '';
   render();
-});
+  maybeTriggerAI();
+}
 
+document.getElementById('reset').addEventListener('click', resetGame);
 document.getElementById('undo').addEventListener('click', undoMove);
-
 document.getElementById('flip').addEventListener('click', () => {
   state.flipped = !state.flipped;
   render();
 });
 
+// ---- Controlli modalità / AI ----
+const modeSelect = document.getElementById('mode');
+const aiColorSelect = document.getElementById('aiColor');
+const difficultySelect = document.getElementById('difficulty');
+const aiOptions = document.querySelectorAll('.ai-option');
+
+function updateAIControls() {
+  const show = state.mode === 'pvc';
+  aiOptions.forEach(el => el.classList.toggle('hidden', !show));
+}
+
+modeSelect.addEventListener('change', () => {
+  state.mode = modeSelect.value;
+  updateAIControls();
+  resetGame();
+});
+aiColorSelect.addEventListener('change', () => {
+  state.aiColor = aiColorSelect.value;
+  resetGame();
+});
+difficultySelect.addEventListener('change', () => {
+  state.difficulty = parseInt(difficultySelect.value, 10);
+});
+
+// ---- Motore AI: minimax + alpha-beta ----
+const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+
+// Piece-square tables (prospettiva del Bianco; per il Nero si specchia: PST[7-r][c])
+const PST = {
+  p: [
+    [ 0, 0, 0, 0, 0, 0, 0, 0],
+    [50,50,50,50,50,50,50,50],
+    [10,10,20,30,30,20,10,10],
+    [ 5, 5,10,25,25,10, 5, 5],
+    [ 0, 0, 0,20,20, 0, 0, 0],
+    [ 5,-5,-10,0, 0,-10,-5, 5],
+    [ 5,10,10,-20,-20,10,10, 5],
+    [ 0, 0, 0, 0, 0, 0, 0, 0]
+  ],
+  n: [
+    [-50,-40,-30,-30,-30,-30,-40,-50],
+    [-40,-20,  0,  0,  0,  0,-20,-40],
+    [-30,  0, 10, 15, 15, 10,  0,-30],
+    [-30,  5, 15, 20, 20, 15,  5,-30],
+    [-30,  0, 15, 20, 20, 15,  0,-30],
+    [-30,  5, 10, 15, 15, 10,  5,-30],
+    [-40,-20,  0,  5,  5,  0,-20,-40],
+    [-50,-40,-30,-30,-30,-30,-40,-50]
+  ],
+  b: [
+    [-20,-10,-10,-10,-10,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5, 10, 10,  5,  0,-10],
+    [-10,  5,  5, 10, 10,  5,  5,-10],
+    [-10,  0, 10, 10, 10, 10,  0,-10],
+    [-10, 10, 10, 10, 10, 10, 10,-10],
+    [-10,  5,  0,  0,  0,  0,  5,-10],
+    [-20,-10,-10,-10,-10,-10,-10,-20]
+  ],
+  r: [
+    [ 0, 0, 0, 0, 0, 0, 0, 0],
+    [ 5,10,10,10,10,10,10, 5],
+    [-5, 0, 0, 0, 0, 0, 0,-5],
+    [-5, 0, 0, 0, 0, 0, 0,-5],
+    [-5, 0, 0, 0, 0, 0, 0,-5],
+    [-5, 0, 0, 0, 0, 0, 0,-5],
+    [-5, 0, 0, 0, 0, 0, 0,-5],
+    [ 0, 0, 0, 5, 5, 0, 0, 0]
+  ],
+  q: [
+    [-20,-10,-10, -5, -5,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5,  5,  5,  5,  0,-10],
+    [ -5,  0,  5,  5,  5,  5,  0, -5],
+    [  0,  0,  5,  5,  5,  5,  0, -5],
+    [-10,  5,  5,  5,  5,  5,  0,-10],
+    [-10,  0,  5,  0,  0,  0,  0,-10],
+    [-20,-10,-10, -5, -5,-10,-10,-20]
+  ],
+  k: [
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-20,-30,-30,-40,-40,-30,-30,-20],
+    [-10,-20,-20,-20,-20,-20,-20,-10],
+    [ 20, 20,  0,  0,  0,  0, 20, 20],
+    [ 20, 30, 10,  0,  0, 10, 30, 20]
+  ]
+};
+
+function evaluateBoard(board) {
+  let score = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (!p) continue;
+      const type = p.toLowerCase();
+      const val = PIECE_VALUES[type];
+      const pst = isWhite(p) ? PST[type][r][c] : PST[type][7-r][c];
+      score += isWhite(p) ? (val + pst) : -(val + pst);
+    }
+  }
+  return score;
+}
+
+// Applica la mossa su una posizione pura (non tocca lo stato globale)
+function applyMovePure(pos, move) {
+  const b = cloneBoard(pos.board);
+  const castling = { ...pos.castling };
+  const [fr, fc] = move.from;
+  const [tr, tc] = move.to;
+  const piece = b[fr][fc];
+  const captured = move.enPassant ? b[tr + (isWhite(piece) ? 1 : -1)][tc] : b[tr][tc];
+
+  b[tr][tc] = piece;
+  b[fr][fc] = '';
+  if (move.enPassant) {
+    const dir = isWhite(piece) ? 1 : -1;
+    b[tr + dir][tc] = '';
+  }
+  if (move.castle === 'k') { b[tr][5] = b[tr][7]; b[tr][7] = ''; }
+  else if (move.castle === 'q') { b[tr][3] = b[tr][0]; b[tr][0] = ''; }
+  if (move.promotion) b[tr][tc] = isWhite(piece) ? move.promotion.toUpperCase() : move.promotion;
+
+  if (piece === 'K') { castling.K = false; castling.Q = false; }
+  if (piece === 'k') { castling.k = false; castling.q = false; }
+  if (piece === 'R' && fr === 7 && fc === 0) castling.Q = false;
+  if (piece === 'R' && fr === 7 && fc === 7) castling.K = false;
+  if (piece === 'r' && fr === 0 && fc === 0) castling.q = false;
+  if (piece === 'r' && fr === 0 && fc === 7) castling.k = false;
+  if (captured === 'R' && tr === 7 && tc === 0) castling.Q = false;
+  if (captured === 'R' && tr === 7 && tc === 7) castling.K = false;
+  if (captured === 'r' && tr === 0 && tc === 0) castling.q = false;
+  if (captured === 'r' && tr === 0 && tc === 7) castling.k = false;
+
+  return {
+    board: b,
+    turn: pos.turn === 'w' ? 'b' : 'w',
+    castling,
+    enPassant: move.double ? [(fr + tr) / 2, tc] : null,
+    captured
+  };
+}
+
+function genLegalMoves(pos) {
+  const pseudo = generatePseudoMoves(pos.board, pos.turn, pos.castling, pos.enPassant);
+  return pseudo.filter(m => {
+    const next = applyMovePure(pos, m);
+    return !isInCheck(next.board, pos.turn);
+  });
+}
+
+// Ordinamento mosse: catture per prime (MVV-LVA semplificato)
+function orderMoves(board, moves) {
+  return moves.slice().sort((a, b) => scoreMove(board, b) - scoreMove(board, a));
+}
+function scoreMove(board, m) {
+  const target = board[m.to[0]][m.to[1]];
+  let s = 0;
+  if (target) s += 10 * PIECE_VALUES[target.toLowerCase()] - PIECE_VALUES[board[m.from[0]][m.from[1]].toLowerCase()];
+  if (m.promotion) s += PIECE_VALUES[m.promotion];
+  return s;
+}
+
+function search(pos, depth, alpha, beta, ply) {
+  if (depth === 0) return { score: evaluateBoard(pos.board) };
+  const moves = genLegalMoves(pos);
+  if (moves.length === 0) {
+    if (isInCheck(pos.board, pos.turn)) {
+      // matto: il lato al tratto perde; valore peggiore se il matto è più vicino
+      return { score: pos.turn === 'w' ? -100000 + ply : 100000 - ply };
+    }
+    return { score: 0 }; // stallo
+  }
+  const ordered = orderMoves(pos.board, moves);
+  let bestMove = ordered[0];
+
+  if (pos.turn === 'w') {
+    let best = -Infinity;
+    for (const m of ordered) {
+      const next = applyMovePure(pos, m);
+      const { score } = search(next, depth - 1, alpha, beta, ply + 1);
+      if (score > best) { best = score; bestMove = m; }
+      if (best > alpha) alpha = best;
+      if (beta <= alpha) break;
+    }
+    return { score: best, move: bestMove };
+  } else {
+    let best = Infinity;
+    for (const m of ordered) {
+      const next = applyMovePure(pos, m);
+      const { score } = search(next, depth - 1, alpha, beta, ply + 1);
+      if (score < best) { best = score; bestMove = m; }
+      if (best < beta) beta = best;
+      if (beta <= alpha) break;
+    }
+    return { score: best, move: bestMove };
+  }
+}
+
+function maybeTriggerAI() {
+  if (state.mode !== 'pvc' || state.gameOver) return;
+  if (state.turn !== state.aiColor || state.aiThinking) return;
+
+  state.aiThinking = true;
+  messageEl.textContent = 'Il computer sta pensando…';
+
+  // setTimeout per permettere al browser di disegnare prima di bloccare il thread
+  setTimeout(() => {
+    const pos = {
+      board: cloneBoard(state.board),
+      turn: state.turn,
+      castling: { ...state.castling },
+      enPassant: state.enPassant ? [...state.enPassant] : null
+    };
+    const { move } = search(pos, state.difficulty, -Infinity, Infinity, 0);
+    state.aiThinking = false;
+    if (move) makeMove(move);
+  }, 50);
+}
+
+updateAIControls();
 render();
+maybeTriggerAI();

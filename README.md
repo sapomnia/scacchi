@@ -4,11 +4,17 @@ Piccolo gioco di scacchi in HTML + CSS + JavaScript puro. Due giocatori sullo st
 
 ## Funzionalità
 
+- Due modalità: **2 giocatori** (hotseat) o **contro il computer**
+- AI con 3 livelli di difficoltà (Facile / Media / Difficile), basata su minimax con alpha-beta pruning e piece-square tables
 - Tutte le mosse regolamentari, arrocco, en passant, promozione
 - Rilevamento di scacco, scacco matto e stallo
 - Pulsanti "Nuova partita", "Annulla mossa", "Ruota scacchiera"
 - Storico mosse in notazione algebrica semplificata
 - Pezzi catturati visibili a lato
+
+## Come giocare contro il computer
+
+Nel pannello laterale scegli "Contro il computer", poi seleziona di che colore gioca la macchina e il livello di difficoltà. Se scegli che il computer gioca con il Bianco, muoverà lui per primo.
 
 ## Come giocare in locale
 
