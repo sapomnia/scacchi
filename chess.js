@@ -1,8 +1,12 @@
 // Scacchi - due giocatori locali
 // Notazione pezzi: lettera minuscola = nero, maiuscola = bianco (P N B R Q K)
 
+// Uso sempre i glifi "pieni" (neri) e coloro via CSS: molti font di sistema
+// rendono i glifi del Bianco come contorno invece che come silhouette, dando
+// pezzi neri dall'aspetto "vuoto". Con un unico set di glifi + color CSS
+// entrambi i colori risultano omogenei.
 const PIECES = {
-  'K': '\u2654', 'Q': '\u2655', 'R': '\u2656', 'B': '\u2657', 'N': '\u2658', 'P': '\u2659',
+  'K': '\u265A', 'Q': '\u265B', 'R': '\u265C', 'B': '\u265D', 'N': '\u265E', 'P': '\u265F',
   'k': '\u265A', 'q': '\u265B', 'r': '\u265C', 'b': '\u265D', 'n': '\u265E', 'p': '\u265F'
 };
 
@@ -37,8 +41,9 @@ const state = {
   captured: { w: [], b: [] },
   mode: 'pvp',        // 'pvp' | 'pvc'
   aiColor: 'b',       // colore giocato dal computer
-  difficulty: 3,      // profondità di ricerca
-  aiThinking: false
+  difficulty: 2,      // profondità di ricerca (1-3)
+  aiThinking: false,
+  aiTimeoutId: null
 };
 
 const boardEl = document.getElementById('board');
@@ -481,7 +486,7 @@ function render() {
       const piece = state.board[r][c];
       if (piece) {
         const span = document.createElement('span');
-        span.className = 'piece';
+        span.className = 'piece ' + (isWhite(piece) ? 'white' : 'black');
         span.textContent = PIECES[piece];
         sq.appendChild(span);
       }
@@ -504,8 +509,12 @@ function render() {
     historyEl.appendChild(li);
   }
 
-  capWhiteEl.textContent = state.captured.w.map(p => PIECES[p]).join(' ');
-  capBlackEl.textContent = state.captured.b.map(p => PIECES[p]).join(' ');
+  capWhiteEl.innerHTML = state.captured.w
+    .map(p => `<span class="piece ${isWhite(p) ? 'white' : 'black'}">${PIECES[p]}</span>`)
+    .join(' ');
+  capBlackEl.innerHTML = state.captured.b
+    .map(p => `<span class="piece ${isWhite(p) ? 'white' : 'black'}">${PIECES[p]}</span>`)
+    .join(' ');
 }
 
 function onSquareClick(r, c) {
@@ -547,6 +556,11 @@ function selectSquare(r, c) {
 
 // ---- Pulsanti ----
 function resetGame() {
+  // annulla qualsiasi mossa AI in coda, altrimenti può "sporcare" la nuova partita
+  if (state.aiTimeoutId !== null) {
+    clearTimeout(state.aiTimeoutId);
+    state.aiTimeoutId = null;
+  }
   Object.assign(state, {
     board: initialBoard(),
     turn: 'w',
@@ -783,16 +797,29 @@ function maybeTriggerAI() {
   messageEl.textContent = 'Il computer sta pensando…';
 
   // setTimeout per permettere al browser di disegnare prima di bloccare il thread
-  setTimeout(() => {
-    const pos = {
-      board: cloneBoard(state.board),
-      turn: state.turn,
-      castling: { ...state.castling },
-      enPassant: state.enPassant ? [...state.enPassant] : null
-    };
-    const { move } = search(pos, state.difficulty, -Infinity, Infinity, 0);
-    state.aiThinking = false;
-    if (move) makeMove(move);
+  state.aiTimeoutId = setTimeout(() => {
+    state.aiTimeoutId = null;
+    try {
+      // se nel frattempo lo stato è cambiato (reset, cambio modalità, ecc.), esci
+      if (state.mode !== 'pvc' || state.gameOver || state.turn !== state.aiColor) {
+        messageEl.textContent = '';
+        return;
+      }
+      const pos = {
+        board: cloneBoard(state.board),
+        turn: state.turn,
+        castling: { ...state.castling },
+        enPassant: state.enPassant ? [...state.enPassant] : null
+      };
+      const { move } = search(pos, state.difficulty, -Infinity, Infinity, 0);
+      if (!move) return;
+      // ri-verifica prima di applicare
+      if (state.mode !== 'pvc' || state.gameOver || state.turn !== state.aiColor) return;
+      state.aiThinking = false;
+      makeMove(move);
+    } finally {
+      state.aiThinking = false;
+    }
   }, 50);
 }
 
