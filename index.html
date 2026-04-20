@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scacchi</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Scacchi</h1>
+      <div class="status">
+        <span id="turn">Tocca al Bianco</span>
+        <span id="message"></span>
+      </div>
+    </header>
+
+    <main>
+      <div class="board-wrap">
+        <div id="board" class="board" aria-label="Scacchiera"></div>
+      </div>
+
+      <aside class="sidebar">
+        <div class="controls">
+          <button id="reset">Nuova partita</button>
+          <button id="undo">Annulla mossa</button>
+          <button id="flip">Ruota scacchiera</button>
+        </div>
+        <h2>Mosse</h2>
+        <ol id="history" class="history"></ol>
+        <div class="captured">
+          <div><strong>Catturati dal Bianco:</strong> <span id="capWhite"></span></div>
+          <div><strong>Catturati dal Nero:</strong> <span id="capBlack"></span></div>
+        </div>
+      </aside>
+    </main>
+
+    <footer>
+      <small>Due giocatori allo stesso dispositivo. Clicca un pezzo e poi la casa di destinazione.</small>
+    </footer>
+  </div>
+
+  <div id="promotion" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <p>Scegli il pezzo per la promozione:</p>
+      <div class="promo-buttons">
+        <button data-piece="q">Donna</button>
+        <button data-piece="r">Torre</button>
+        <button data-piece="b">Alfiere</button>
+        <button data-piece="n">Cavallo</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="chess.js"></script>
+</body>
+</html>
